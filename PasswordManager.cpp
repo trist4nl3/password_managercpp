@@ -1,16 +1,12 @@
 #include "PasswordManager.hpp"
-#include "AES.hpp"
 #include <iostream>
 #include <fstream>
 #include <string>
 #include <vector>
-#include <cstring>
-#include <openssl/evp.h>
+#include <algorithm>
 
-#define AES_BLOCK_SIZE 16
-#define AES_KEY_SIZE 32
 #define PASSWORD_FILE "passwords.txt"
-
+#define CAESAR_SHIFT 3
 
 PasswordManager::PasswordManager()
 {
@@ -35,7 +31,7 @@ void PasswordManager::logout()
     masterPassword.clear();
 }
 
-void PasswordManager::addPassword(const std::string & username, const std::string & password)
+void PasswordManager::addPassword(const std::string & serviceName, const std::string & password)
 {
     if(!isLoggedIn)
     {
@@ -43,25 +39,8 @@ void PasswordManager::addPassword(const std::string & username, const std::strin
         return;
     }
 
-    // Encrypting the password using AES
-    unsigned char key[AES_KEY_SIZE];
-    strncpy((char*)key, masterPassword.c_str(), AES_KEY_SIZE);
-
-    unsigned char ciphertext[password.length() + AES_BLOCK_SIZE];
-    if (!aesEncrypt((const unsigned char*)password.c_str(), password.length(), key, ciphertext))
-    {
-        std::cerr << "Error: Unable to encrypt password." << std::endl;
-        return;
-    }
-
-    // Convert the ciphertext to hexadecimal string
-    std::string encryptedPassword;
-    for (int i = 0; i < AES_BLOCK_SIZE; ++i)
-    {
-        char hex[3];
-        sprintf(hex, "%02x", ciphertext[i]);
-        encryptedPassword += hex;
-    }
+    // Encrypting the password using Caesar cipher
+    std::string encryptedPassword = caesarCipherEncrypt(password, CAESAR_SHIFT);
 
     passwords.push_back(std::make_pair(serviceName, encryptedPassword));
     savePasswordsToFile();
@@ -75,16 +54,10 @@ void PasswordManager::removePassword(const std::string & serviceName)
         return;
     }
 
-    for (auto it = passwords.begin(); it != passwords.end(); ++it)
-    {
-        if (it->first == serviceName)
-        {
-            passwords.erase(it);
-            savePasswordsToFile();
-            return;
+    passwords.erase(std::remove_if(passwords.begin(), passwords.end(),
+        [&](const auto& entry) { return entry.first == serviceName; }), passwords.end());
 
-        }
-    }
+    savePasswordsToFile();
 }
 
 std::string PasswordManager::getPassword(const std::string & serviceName)
@@ -99,27 +72,8 @@ std::string PasswordManager::getPassword(const std::string & serviceName)
     {
         if (entry.first == serviceName)
         {
-            // Decrypt Password using AES
-
-            unsigned char key[AES_KEY_SIZE];
-            strncpy((char*)key, masterPassword.c_str(), AES_KEY_SIZE);
-
-            unsigned char ciphertext[AES_BLOCK_SIZE];
-
-            for (int i = 0; i < AES_BLOCK_SIZE; i += 2)
-            {
-                std::string hex = entry.second.substr(i, 2);
-                ciphertext[i / 2] = (unsigned char)strtol(hex.c_str(), NULL, 16);
-            }
-
-            unsigned char decryptedPassword[AES_BLOCK_SIZE];
-            if (!aesDecrypt(ciphertext, AES_BLOCK_SIZE, key, decryptedPassword))
-            {
-                std::cerr << "Error: Unable to decrypt password." << std::endl;
-                return "";
-            }
-
-            return std::string((char*)decryptedPassword);
+            // Decrypt Password using Caesar cipher
+            return caesarCipherDecrypt(entry.second, CAESAR_SHIFT);
         }
     }
     std::cerr << "Error: Password for service '" << serviceName << "' not found." << std::endl;
@@ -137,7 +91,23 @@ std::string PasswordManager::generatePassword(int length)
     return password;
 }
 
+std::string PasswordManager::caesarCipherEncrypt(const std::string &text, int shift)
+{
+    std::string result = text;
+    for (char &c : result)
+    {
+        if (isalpha(c))
+        {
+            c = (c - 'a' + shift) % 26 + 'a';
+        }
+    }
+    return result;
+}
 
+std::string PasswordManager::caesarCipherDecrypt(const std::string &text, int shift)
+{
+    return caesarCipherEncrypt(text, 26 - shift);
+}
 
 void PasswordManager::loadPasswordsFromFile()
 {
@@ -151,10 +121,10 @@ void PasswordManager::loadPasswordsFromFile()
     passwords.clear();
     
 
-    std::string serviceName, encrpytedPassword;
-    while (file >> serviceName >> encrpytedPassword)
+    std::string serviceName, encryptedPassword;
+    while (file >> serviceName >> encryptedPassword)
     {
-        passwords.push_back(std::make_pair(serviceName, encrpytedPassword));
+        passwords.push_back(std::make_pair(serviceName, encryptedPassword));
     }
 
     file.close();
@@ -171,13 +141,8 @@ void PasswordManager::savePasswordsToFile()
 
     for (const auto& entry : passwords)
     {
-        file << entry.first << "" << entry.second << std::endl;
+        file << entry.first << " " << entry.second << std::endl;
     }
 
     file.close();
 }
-
-
-
-
-
