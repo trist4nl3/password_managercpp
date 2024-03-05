@@ -18,8 +18,9 @@ class PasswordManager
     private:
         std::string username;
         std::string masterPassword;
-        bool isLoggedin;
+        std::string serviceName;
+        bool isLoggedIn;
         std::vector<std::pair<std::string, std::string>> passwords; 
         void loadPasswordsFromFile();
         void savePasswordsToFile();
-}
+};
